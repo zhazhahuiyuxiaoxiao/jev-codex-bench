@@ -1,0 +1,1 @@
+{"id":"csv-export","prompt":"Fix CSV formula injection in exported cells. Text that a spreadsheet could interpret as a formula must be safely prefixed, including after leading whitespace or control characters. Preserve ordinary text and valid CSV encoding. Do not change unrelated export behavior."}

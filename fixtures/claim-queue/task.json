@@ -1,0 +1,1 @@
+{"id":"claim-queue","prompt":"Make Queue.Claim safe under concurrent callers: each pending job may be claimed at most once, without losing jobs. Preserve FIFO ordering for sequential callers and the existing public API."}

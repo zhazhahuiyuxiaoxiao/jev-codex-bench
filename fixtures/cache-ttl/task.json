@@ -1,0 +1,1 @@
+{"id":"cache-ttl","prompt":"Fix the cache TTL boundary: an entry is expired at its expiration instant, and zero or negative TTL entries must never be returned. Keep the existing clock injection and other cache behavior."}
