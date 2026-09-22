@@ -32,6 +32,7 @@ func main() {
 		fs := flag.NewFlagSet("run-all", flag.ExitOnError)
 		root := fs.String("root", ".", "repository root")
 		out := fs.String("out", "results", "private result directory")
+		task := fs.String("task", "", "run only one task (csv-export, cache-ttl, or claim-queue); default: all")
 		model := fs.String("codex-model", "", "Codex model ID; required")
 		fs.Parse(os.Args[2:])
 		absRoot, absErr := filepath.Abs(*root)
@@ -45,7 +46,7 @@ func main() {
 			break
 		}
 		suite, runErr := bench.RunAll(context.Background(), bench.Options{
-			RepoRoot: absRoot, OutputDir: absOut, BudgetFile: filepath.Join(absRoot, ".local", "jev-budget.json"), CodexModel: *model,
+			RepoRoot: absRoot, OutputDir: absOut, BudgetFile: filepath.Join(absRoot, ".local", "jev-budget.json"), TaskID: *task, CodexModel: *model,
 		})
 		err = runErr
 		if err == nil {
@@ -75,5 +76,5 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: jev-bench check-fixtures | run-all --codex-model MODEL | mcp --broker-socket SOCKET")
+	fmt.Fprintln(os.Stderr, "usage: jev-bench check-fixtures | run-all --codex-model MODEL [--task TASK] [--out DIR] | mcp --broker-socket SOCKET")
 }

@@ -1,15 +1,17 @@
-package csvexport
+package csvexport_test
 
 import (
 	"encoding/csv"
 	"strings"
 	"testing"
+
+	csvexport "example.com/csv-export"
 )
 
 func TestFormulaCells(t *testing.T) {
 	cases := []string{"=SUM(1,2)", "+1+2", "-1+2", "@cmd", "  =1+2", "\t=1+2", "\r@cmd", "\n+1"}
 	for _, input := range cases {
-		got := SafeCell(input)
+		got := csvexport.SafeCell(input)
 		if !strings.HasPrefix(got, "'") || !strings.HasSuffix(got, input) {
 			t.Errorf("unsafe cell %q became %q", input, got)
 		}
@@ -17,7 +19,7 @@ func TestFormulaCells(t *testing.T) {
 }
 
 func TestSafeExportRoundTrip(t *testing.T) {
-	encoded, err := EncodeRow([]string{"=1+2", "ordinary"})
+	encoded, err := csvexport.EncodeRow([]string{"=1+2", "ordinary"})
 	if err != nil {
 		t.Fatal(err)
 	}

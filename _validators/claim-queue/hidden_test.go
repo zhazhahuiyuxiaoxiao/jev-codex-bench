@@ -1,8 +1,10 @@
-package claimqueue
+package claimqueue_test
 
 import (
 	"sync"
 	"testing"
+
+	claimqueue "example.com/claim-queue"
 )
 
 func TestConcurrentClaimUnique(t *testing.T) {
@@ -11,7 +13,7 @@ func TestConcurrentClaimUnique(t *testing.T) {
 	for i := range ids {
 		ids[i] = i + 1
 	}
-	q := New(ids...)
+	q := claimqueue.New(ids...)
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	results := make(chan int, n)

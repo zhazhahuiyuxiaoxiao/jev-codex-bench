@@ -1,13 +1,15 @@
-package cachettl
+package cachettl_test
 
 import (
 	"testing"
 	"time"
+
+	cachettl "example.com/cache-ttl"
 )
 
 func TestExpiryBoundary(t *testing.T) {
 	now := time.Unix(0, 0)
-	c := New(func() time.Time { return now })
+	c := cachettl.New(func() time.Time { return now })
 	c.Set("a", "value", time.Second)
 	now = now.Add(time.Second)
 	if value, ok := c.Get("a"); ok || value != "" {
@@ -17,7 +19,7 @@ func TestExpiryBoundary(t *testing.T) {
 
 func TestNonPositiveTTL(t *testing.T) {
 	now := time.Unix(0, 0)
-	c := New(func() time.Time { return now })
+	c := cachettl.New(func() time.Time { return now })
 	for _, ttl := range []time.Duration{0, -time.Second} {
 		c.Set("a", "value", ttl)
 		if value, ok := c.Get("a"); ok || value != "" {

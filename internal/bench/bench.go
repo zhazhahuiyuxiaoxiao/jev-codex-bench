@@ -38,21 +38,24 @@ type CodexUsage struct {
 }
 
 type Record struct {
-	TaskID       string     `json:"task_id"`
-	Mode         string     `json:"mode"`
-	Status       string     `json:"status"`
-	Error        string     `json:"error,omitempty"`
-	ElapsedMS    int64      `json:"elapsed_ms"`
-	CodexUsage   CodexUsage `json:"codex_usage"`
-	MCPCalls     int        `json:"mcp_calls"`
-	JevCalls     int        `json:"jev_calls"`
-	JevUSD       float64    `json:"jev_usd"`
-	Selected     []string   `json:"selected,omitempty"`
-	CodexVersion string     `json:"codex_version"`
-	CodexModel   string     `json:"codex_model_requested,omitempty"`
-	JevModel     string     `json:"jev_model"`
-	TestsPassed  bool       `json:"tests_passed"`
-	FinishedAt   time.Time  `json:"finished_at"`
+	TaskID           string     `json:"task_id"`
+	Mode             string     `json:"mode"`
+	Status           string     `json:"status"`
+	Error            string     `json:"error,omitempty"`
+	ElapsedMS        int64      `json:"elapsed_ms"`
+	CodexUsage       CodexUsage `json:"codex_usage"`
+	MCPCalls         int        `json:"mcp_calls"`
+	JevCalls         int        `json:"jev_calls"`
+	JevUSD           float64    `json:"jev_usd"`
+	Selected         []string   `json:"selected,omitempty"`
+	CodexVersion     string     `json:"codex_version"`
+	CodexModel       string     `json:"codex_model_requested,omitempty"`
+	JevModel         string     `json:"jev_model"`
+	TestsPassed      bool       `json:"tests_passed"`
+	PatchPath        string     `json:"patch_path,omitempty"`
+	TestOutputPath   string     `json:"test_output_path,omitempty"`
+	DiagnosticsError string     `json:"diagnostics_error,omitempty"`
+	FinishedAt       time.Time  `json:"finished_at"`
 }
 
 type Suite struct {
@@ -65,6 +68,7 @@ type Options struct {
 	RepoRoot   string
 	OutputDir  string
 	BudgetFile string
+	TaskID     string
 	CodexModel string
 	CodexBin   string
 	GoBin      string
@@ -133,6 +137,10 @@ func RunAll(ctx context.Context, raw Options) (Suite, error) {
 	if o.CodexModel == "" {
 		return suite, errors.New("--codex-model is required so all arms use one pinned model")
 	}
+	selectedTasks, err := tasksForRun(o.TaskID)
+	if err != nil {
+		return suite, err
+	}
 	ledger := &jev.Ledger{Path: o.BudgetFile}
 	client := jev.NewClient(ledger)
 	if client.Key == "" {
@@ -158,7 +166,7 @@ func RunAll(ctx context.Context, raw Options) (Suite, error) {
 		return suite, fmt.Errorf("Codex CLI unavailable: %w", err)
 	}
 	version := strings.TrimSpace(string(versionBytes))
-	for _, id := range taskIDs {
+	for _, id := range selectedTasks {
 		task, err := loadTask(o.RepoRoot, id)
 		if err != nil {
 			return suite, err
@@ -183,6 +191,16 @@ func RunAll(ctx context.Context, raw Options) (Suite, error) {
 		}
 	}
 	return suite, nil
+}
+
+func tasksForRun(id string) ([]string, error) {
+	if id == "" {
+		return slices.Clone(taskIDs), nil
+	}
+	if !slices.Contains(taskIDs, id) {
+		return nil, fmt.Errorf("unknown task %q; choose one of %s", id, strings.Join(taskIDs, ", "))
+	}
+	return []string{id}, nil
 }
 
 func runOne(ctx context.Context, o Options, task Task, mode string, ledger *jev.Ledger, client *jev.Client) (record Record) {
@@ -254,6 +272,16 @@ func runOne(ctx context.Context, o Options, task Task, mode string, ledger *jev.
 		record.JevCalls = after.Calls - before.Calls
 		record.JevUSD = after.SpentUSD - before.SpentUSD
 	}
+	// Capture edits before the hidden validators are copied into the workspace.
+	patch, patchErr := fixtureDiff(ctx, filepath.Join(o.RepoRoot, "fixtures", task.ID), workspace)
+	if patchErr != nil {
+		record.DiagnosticsError = "cannot capture code diff: " + patchErr.Error()
+	} else {
+		record.PatchPath, patchErr = saveDiagnostic(o.OutputDir, task.ID, mode, "changes.patch", patch)
+		if patchErr != nil {
+			record.DiagnosticsError = "cannot save code diff: " + patchErr.Error()
+		}
+	}
 	if err != nil || !completed {
 		if errors.Is(callCtx.Err(), context.DeadlineExceeded) {
 			record.Error = "Codex timed out"
@@ -275,7 +303,16 @@ func runOne(ctx context.Context, o Options, task Task, mode string, ledger *jev.
 	testCmd := exec.CommandContext(testCtx, o.GoBin, testArgs...)
 	testCmd.Dir = workspace
 	testCmd.Env = append(withoutTypeSafeKey(os.Environ()), "GOWORK=off")
-	if err := testCmd.Run(); err != nil {
+	testOutput, testErr := testCmd.CombinedOutput()
+	if testErr != nil {
+		var saveErr error
+		record.TestOutputPath, saveErr = saveDiagnostic(o.OutputDir, task.ID, mode, "hidden-test.txt", testOutput)
+		if saveErr != nil {
+			if record.DiagnosticsError != "" {
+				record.DiagnosticsError += "; "
+			}
+			record.DiagnosticsError += "cannot save hidden test output: " + saveErr.Error()
+		}
 		if errors.Is(testCtx.Err(), context.DeadlineExceeded) {
 			record.Error = "hidden validation timed out"
 			return record
@@ -286,6 +323,31 @@ func runOne(ctx context.Context, o Options, task Task, mode string, ledger *jev.
 	}
 	record.Status, record.TestsPassed = "pass", true
 	return record
+}
+
+func fixtureDiff(ctx context.Context, original, workspace string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "git", "diff", "--no-index", "--no-ext-diff", "--no-color", "--", original, workspace)
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return output, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return output, nil // git diff uses exit 1 when differences exist.
+	}
+	return nil, fmt.Errorf("git diff: %w: %s", err, strings.TrimSpace(string(output)))
+}
+
+func saveDiagnostic(outDir, taskID, mode, name string, data []byte) (string, error) {
+	rel := filepath.Join("diagnostics", taskID, mode, name)
+	path := filepath.Join(outDir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return "", err
+	}
+	return rel, nil
 }
 
 func parseCodexEvents(data []byte) (CodexUsage, int, bool) {
@@ -386,6 +448,17 @@ func RenderReport(suite Suite) string {
 		fmt.Fprintf(&b, "| %s | %s | %s | %t | %.1f | %d | %d | %d | %d | %.6f |\n", r.TaskID, r.Mode, r.Status, r.TestsPassed, float64(r.ElapsedMS)/1000, r.CodexUsage.InputTokens, r.CodexUsage.OutputTokens, r.MCPCalls, r.JevCalls, r.JevUSD)
 	}
 	fmt.Fprintf(&b, "\nJev ledger: spent $%.6f; reserved $%.6f; cap $%.2f. Reservations remain after uncertain network failures.\n", suite.Budget.SpentUSD, suite.Budget.ReservedUSD, suite.Budget.BudgetUSD)
+	fmt.Fprintln(&b, "\nLocal diagnostics (relative to this report; keep private):")
+	for _, r := range suite.Records {
+		fmt.Fprintf(&b, "- %s / %s: patch `%s`", r.TaskID, r.Mode, r.PatchPath)
+		if r.TestOutputPath != "" {
+			fmt.Fprintf(&b, "; hidden test output `%s`", r.TestOutputPath)
+		}
+		if r.DiagnosticsError != "" {
+			fmt.Fprintf(&b, "; diagnostic error: %s", r.DiagnosticsError)
+		}
+		fmt.Fprintln(&b)
+	}
 	fmt.Fprintln(&b, "\nEach arm has one run per task. A passing test is the only success claim; time and tokens are descriptive, not statistically significant. A missing autonomous MCP call is reported, not counted as Jev assistance.")
 	return b.String()
 }
