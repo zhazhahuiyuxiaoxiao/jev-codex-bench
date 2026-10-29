@@ -1,3 +1,13 @@
+## 工程维护入口（2026-10-29）
+
+本次按已提交 `main`（`366af6cc7810e967df468d0fdb6deacefe28a28b`）补录工程与 OpenSpec 基线；下方原有产品介绍、署名和许可保留。历史验证记录不代表本次重新完成真机、云端或发布验收。
+
+Go 小样本编码实验运行器，比较 baseline/prefilter/autonomous 三组；只使用三个公开自制样本，不代表通用性能结论。
+
+- [工程基线与验收边界](docs/engineering-baseline.md)
+- [项目开发约定](AGENTS.md)
+- [OpenSpec 维护流程](openspec/README.md)
+
 # Jev × Codex Bench
 
 一个可复现的小样本实验：在相同的 Go 编码任务上，比较普通 Codex、Jev 预筛选上下文、以及 Codex 自主决定是否调用 Jev 的结果。它不是新的通用 Jev MCP 连接器，也不预设 Jev 一定有收益。
@@ -8,12 +18,12 @@
 
 - 只运行 `go test ./...` 或 `check-fixtures` 不会调用 Jev 或 Codex，不消耗 API 额度。
 - `run-all` 默认运行 **3 个任务 × 3 个实验组 = 9 次 Codex**；`--task cache-ttl` 等单任务运行仍会执行该任务的 3 个实验组。其中 Jev 组会请求 TypeSafe。Codex 用量与 Jev 额度是两套独立计量；本项目只限制 Jev 请求，不限制或估算 Codex 订阅/API 用量。
-- Jev 模型固定为 `jev-1.13.0`，按当前官方标价 **$0.042 / 百万输入 token** 估算。`.local/jev-budget.json` 是本地共享账本：每次请求前按请求字节数预留保守金额，总预留加实耗不能超过 **$0.50**；成功后以 API 返回的 `usage.input_tokens` 记实耗。失败或响应不完整时保留预留金额，因为不能确认服务端是否计费。一次请求的真实账单或未来调价仍以 TypeSafe 控制台为准；本地保护不是服务商账户级硬限额。[TypeSafe 模型价格](https://docs.typesafe.ai/models) · [API 参考](https://docs.typesafe.ai/api)
+- Jev 模型固定为 `jev-1.13.0`，按代码中固定的 **$0.042 / 百万输入 token** 费率估算；本次文档核对未重新验证提供商当前价格。`.local/jev-budget.json` 是本地共享账本：每次请求前按请求字节数预留保守金额，总预留加实耗不能超过 **$0.50**；成功后以 API 返回的 `usage.input_tokens` 记实耗。失败或响应不完整时保留预留金额，因为不能确认服务端是否计费。一次请求的真实账单或未来调价仍以 TypeSafe 控制台为准；本地保护不是服务商账户级硬限额。[TypeSafe 模型价格](https://docs.typesafe.ai/models) · [API 参考](https://docs.typesafe.ai/api)
 - Key 只由实验运行器从启动进程的 `TYPESAFE_API_KEY` 环境变量读取，不传入任何 Codex 子进程或 MCP 子进程，也不写入仓库或 Codex 配置。自主组通过权限受限的本地 Unix socket 向运行器请求文件排序；MCP 工具不接收文本参数，运行器只会把预设的公开任务与仓库中原始样本文件送往 Jev，绝不扫描 Codex 可写的临时工作区。不要把 Key 发到聊天、粘进 shell 历史、截图或提交到 Git。`.env.example` 只列变量名，不存值。
 
 ## 准备与离线验证
 
-需要 Go 1.25+、已登录的 Codex CLI，以及正式运行时可用的 TypeSafe API Key。依赖中只有官方 MCP Go SDK 为直接依赖；TypeSafe HTTP 请求用 Go 标准库实现。初次 `go mod download` / `go test` 可能需要下载 Go 依赖。
+离线验证需要 Go 1.25+、Git 及依赖；正式实验另需已登录的 Codex CLI、当前账号可用的模型 ID 和 TypeSafe API Key。运行器使用 Unix socket 与文件锁，当前按 macOS/Linux 类环境说明，未承诺原生 Windows 支持。依赖中只有官方 MCP Go SDK 为直接依赖；TypeSafe HTTP 请求用 Go 标准库实现。初次 `go mod download` / `go test` 可能需要下载 Go 依赖。
 
 ```sh
 go test ./...
