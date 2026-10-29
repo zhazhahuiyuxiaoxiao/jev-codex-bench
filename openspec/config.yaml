@@ -1,0 +1,14 @@
+schema: spec-driven
+context: |
+  jev-codex-bench。Go 小样本编码实验运行器，比较 baseline/prefilter/autonomous 三组；只使用三个公开自制样本，不代表通用性能结论。
+  当前基线为 main@366af6cc7810e967df468d0fdb6deacefe28a28b，核对日期 2026-10-29。
+  本次只补录文档；以源码和测试为准，不声称外部平台或生产验证通过。
+rules:
+  proposal:
+    - 写明问题、范围、验收标准与必须保持的行为；权限和数据语义变化需确认。
+  specs:
+    - 区分现状与期望；每项需求使用 SHALL 或 MUST，并提供 WHEN/THEN 场景和源码依据。
+  design:
+    - 沿用现有架构，说明失败路径、隐私边界和新增复杂度。
+  tasks:
+    - 将实现、针对性测试、文档同步与尚未验证的集成分开记录。
